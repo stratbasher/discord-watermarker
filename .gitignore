@@ -1,0 +1,16 @@
+# Node.js
+node_modules/
+npm-debug.log
+
+# Environment
+.env
+
+# Data and logs
+data/
+logs/
+tmp/
+
+# Other files
+.continue/
+.kilo/
+.vscode/

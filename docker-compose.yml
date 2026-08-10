@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  watermarker-bot:
+    image: ghcr.io/<your-username>/<repo-name>:latest
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./tmp:/app/tmp
+    restart: unless-stopped
