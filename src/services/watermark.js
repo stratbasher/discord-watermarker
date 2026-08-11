@@ -67,9 +67,9 @@ async function applyWatermark(inputBuffer, username, guildName, options = {}) {
   const fontSizeByHeight = Math.round(tileSize / 5)
   const fontSizeByWidth = Math.round(tileSize / estimatedTextWidth)
 
-  // Cap font size so text doesn't overwhelm the tile, especially for short strings
+  // Cap font size relative to the full image height so it never looks too big
   const minFontSize = 8
-  const maxFontSize = Math.round(tileSize * 0.25)
+  const maxFontSize = Math.round(height * 0.05)
   const fontSize = Math.max(minFontSize, Math.min(fontSizeByHeight, fontSizeByWidth, maxFontSize))
 
   const textColor = options.textColor || config.watermarkTextColor
