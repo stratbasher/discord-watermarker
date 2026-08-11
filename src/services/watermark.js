@@ -49,9 +49,6 @@ async function applyWatermark(inputBuffer, username, guildName, options = {}) {
   let watermarkText
   if (options.customText) {
     watermarkText = escapeXml(options.customText)
-    if (watermarkText.length > 120) {
-      watermarkText = watermarkText.slice(0, 117) + '...'
-    }
   } else {
     const escapedUsername = escapeXml(username)
     const escapedGuildName = escapeXml(guildName || 'DM')

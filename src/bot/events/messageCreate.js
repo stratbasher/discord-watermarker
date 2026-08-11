@@ -65,6 +65,13 @@ const CSS_BASIC_COLORS = {
   'yellowgreen': '#9acd32',
 };
 
+function formatErrorReply(errors, messageContent) {
+  const escapedContent = messageContent
+    .replace(/`/g, '\\u200B`')
+    .replace(/\n/g, '\\n');
+  return errors.join('\n') + '\n\n```\n' + escapedContent + '\n```';
+}
+
 const VALID_OPTIONS = ['textcolor', 'opacity', 'quality', 'text'];
 
 const SWITCH_PATTERNS = {
@@ -133,7 +140,14 @@ function parseMessageOptions(content) {
           break;
         }
         case 'text': {
-          options.customText = (match[1] ?? match[2] ?? '').trim();
+          const rawText = (match[1] ?? match[2] ?? '').trim();
+          if (rawText.length === 0) {
+            errors.push('`text:` switch requires a value, e.g. `text:"my custom text"`');
+          } else if (rawText.length > 30) {
+            errors.push(`Custom text is too long (${rawText.length} chars) — max 30 characters`);
+          } else {
+            options.customText = rawText;
+          }
           break;
         }
       }
@@ -237,7 +251,7 @@ module.exports = async function messageCreate(message) {
   const { errors, options } = parseMessageOptions(messageContent);
   if (errors.length > 0) {
     await message.reply({
-      content: errors.join('\n'),
+      content: formatErrorReply(errors, messageContent),
       ephemeral: true,
     });
     await message.delete().catch(() => {});
@@ -246,20 +260,20 @@ module.exports = async function messageCreate(message) {
 
   const images = message.attachments.filter(a => a.contentType?.startsWith('image/'));
   if (images.size === 0) {
-    await message.reply({ content: 'Please attach at least one image to watermark.', ephemeral: true });
+    await message.reply({ content: formatErrorReply(['Please attach at least one image to watermark.'], messageContent), ephemeral: true });
     await message.delete().catch(() => {});
     return;
   }
 
   if (images.size > config.maxImagesPerMessage) {
-    await message.reply({ content: `You can only process up to ${config.maxImagesPerMessage} images at once.`, ephemeral: true });
+    await message.reply({ content: formatErrorReply([`You can only process up to ${config.maxImagesPerMessage} images at once.`], messageContent), ephemeral: true });
     await message.delete().catch(() => {});
     return;
   }
 
   for (const attachment of images.values()) {
     if (attachment.size > config.maxFileSize) {
-      await message.reply({ content: `Image "${attachment.name}" exceeds the 25 MB limit.`, ephemeral: true });
+      await message.reply({ content: formatErrorReply([`Image "${attachment.name}" exceeds the 25 MB limit.`], messageContent), ephemeral: true });
       await message.delete().catch(() => {});
       return;
     }
