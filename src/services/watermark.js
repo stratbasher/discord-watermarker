@@ -61,9 +61,16 @@ async function applyWatermark(inputBuffer, username, guildName, options = {}) {
 
   const baseTileSize = Math.min(width, height)
   const tileSize = Math.max(100, Math.round(baseTileSize * 0.5))
+
+  // Estimate how much horizontal space the text needs relative to the tile
+  const estimatedTextWidth = watermarkText.length * 0.55
   const fontSizeByHeight = Math.round(tileSize / 5)
-  const fontSizeByWidth = Math.round(tileSize / (watermarkText.length * 0.55))
-  const fontSize = Math.max(8, Math.min(fontSizeByHeight, fontSizeByWidth))
+  const fontSizeByWidth = Math.round(tileSize / estimatedTextWidth)
+
+  // Cap font size so text doesn't overwhelm the tile, especially for short strings
+  const minFontSize = 8
+  const maxFontSize = Math.round(tileSize * 0.25)
+  const fontSize = Math.max(minFontSize, Math.min(fontSizeByHeight, fontSizeByWidth, maxFontSize))
 
   const textColor = options.textColor || config.watermarkTextColor
   const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity

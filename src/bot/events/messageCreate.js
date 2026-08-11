@@ -205,6 +205,33 @@ module.exports = async function messageCreate(message) {
 
   if (!message.mentions.has(message.client.user)) return;
 
+  if (strippedContent === '/help' || strippedContent.startsWith('/help ')) {
+    await message.reply({
+      content: [
+        'Hey! Here\'s how to use me:',
+        '',
+        'Just mention me (@Watermarker) with up to 10 images attached and I\'ll add a watermark to them.',
+        '',
+        '**Basic usage:**',
+        '@Watermarker <attach an image>',
+        '',
+        '**Customize the watermark:**',
+        '• `textcolor:red` — change the text color (use hex codes like `#ff0000` or color names like `red`, `blue`, `gold`) ',
+        '• `opacity:50%` — adjust how transparent the watermark is (0-100% or 0.0-1.0) ',
+        '• `quality:80` — set image quality (1-100) ',
+        '• `text:"my custom text"` — replace the default watermark text with anything you want ',
+        '',
+        'Example: @Watermarker textcolor:gold opacity:30% <attach an image>',
+        'Example: @Watermarker text:"Made with ❤️" <attach an image>',
+        '',
+        'Drop an image, mention me, and you\'ll get a watermarked version back!',
+      ].join('\n'),
+      ephemeral: true,
+    });
+    await message.delete().catch(() => {});
+    return;
+  }
+
   const messageContent = rawContent.replace(/<@!?[\d]+>/g, '').trim();
 
   const { errors, options } = parseMessageOptions(messageContent);
