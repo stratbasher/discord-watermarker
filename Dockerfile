@@ -14,7 +14,7 @@ RUN apk add --no-cache dumb-init fontconfig ttf-dejavu
 COPY --from=node-deps /app/node_modules ./node_modules
 COPY src ./src
 
-RUN mkdir -p /app/data /app/logs /app/tmp && chown -R node:node /app
+RUN mkdir -p /app/data /app/logs /app/tmp
 
 USER node
 ENV NODE_ENV=production

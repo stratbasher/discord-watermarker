@@ -9,3 +9,4 @@ services:
       - ./logs:/app/logs
       - ./tmp:/app/tmp
     restart: unless-stopped
+    user: "1001:1001"
