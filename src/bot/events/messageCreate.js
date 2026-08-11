@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const config = require('../../config');
@@ -10,6 +10,7 @@ const { downloadImage } = require('../../services/imageDownloader');
 const { applyWatermark } = require('../../services/watermark');
 const { postViaWebhook } = require('../../services/webhookPoster');
 const WatermarkJob = require('../../database/models/WatermarkJob');
+const { detachMessageHandler, attachMessageHandler } = require('../../bot/client');
 
 const CSS_BASIC_COLORS = {
   'aliceblue': '#f0f8ff', 'antiquewhite': '#faebd7', 'aqua': '#00ffff',
@@ -157,12 +158,14 @@ async function handleReload(message) {
   }
 
   try {
-    const eventsPath = path.resolve(__dirname, 'events');
+    detachMessageHandler();
+    const eventsPath = __dirname;
     for (const file of fs.readdirSync(eventsPath)) {
       if (file.endsWith('.js')) {
         require(path.join(eventsPath, file));
       }
     }
+    attachMessageHandler();
 
     await message.reply({
       content: `Reloaded ${cleared.length} module(s) in ${Date.now() - start}ms:\n\`\`\`${cleared.slice(0, 20).join('\n')}${cleared.length > 20 ? '\n...(truncated)' : ''}\n\`\`\``,
@@ -180,16 +183,19 @@ async function handleReload(message) {
 module.exports = async function messageCreate(message) {
   if (message.author.bot) return;
 
-  const strippedContent = message.content.replace(/<@!?[\d]+>/g, '').trim();
+  const rawContent = message.content;
+  const strippedContent = rawContent.replace(/<@!?[\d]+>/g, '').trim();
 
-  if (strippedContent === '/reload' && message.mentions.has(message.client.user) && isOwner(message)) {
-    await handleReload(message);
-    return;
+  if (message.mentions.has(message.client.user) && isOwner(message)) {
+    if (strippedContent === '/reload' || strippedContent.startsWith('/reload ')) {
+      await handleReload(message);
+      return;
+    }
   }
 
   if (!message.mentions.has(message.client.user)) return;
 
-  const messageContent = message.content.replace(/<@!?[\d]+>/g, '').trim();
+  const messageContent = rawContent.replace(/<@!?[\d]+>/g, '').trim();
 
   const { errors, options } = parseMessageOptions(messageContent);
   if (errors.length > 0) {
@@ -221,8 +227,6 @@ module.exports = async function messageCreate(message) {
       return;
     }
   }
-
-  await message.delete().catch(() => {});
 
   const textColor = options.textColor || config.watermarkTextColor;
   const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity;
@@ -256,9 +260,10 @@ module.exports = async function messageCreate(message) {
     for (const attachment of images.values()) {
       const originalName = attachment.name || `image-${idx}.jpg`
       const baseName = originalName.replace(/\.[^.]+$/, '')
+      logger.debug(`[messageCreate] Downloading attachment: url=${attachment.url}, name=${attachment.name}, size=${attachment.size}, contentType=${attachment.contentType}`);
       downloadPromises.push(
         downloadImage(attachment.url, jobId, `input-${idx}.png`)
-          .then(inputPath => fs.readFile(inputPath))
+          .then(inputPath => fs.promises.readFile(inputPath))
           .then(inputBuffer => ({ inputBuffer, idx, originalName, baseName }))
       );
       idx++;
@@ -267,6 +272,8 @@ module.exports = async function messageCreate(message) {
     const downloadedResults = await Promise.all(downloadPromises);
     downloadedImages.push(...downloadedResults);
     logger.debug(`[${jobId}] Downloaded ${downloadedImages.length} images in ${Date.now() - dlStart}ms`);
+
+    await message.delete().catch(() => {});
 
     const watermarkedBuffers = [];
     const outputFilenames = [];

@@ -4,6 +4,7 @@ const { pipeline } = require('stream/promises');
 const { createWriteStream } = require('fs');
 const path = require('path');
 const config = require('../config');
+const logger = require('../utils/logger');
 
 const ALLOWED_HOSTNAMES = ['cdn.discordapp.com', 'media.discordapp.net'];
 
@@ -24,6 +25,8 @@ async function downloadImage(url, jobId, filename) {
   });
 
   if (response.statusCode !== 200) {
+    const debugInfo = `url=${url}, statusCode=${response.statusCode}, headers=${JSON.stringify(response.headers)}`;
+    logger.error(`[imageDownloader] ${debugInfo}`);
     throw new Error(`Download failed with status ${response.statusCode}`);
   }
 

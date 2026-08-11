@@ -10,15 +10,36 @@ const client = new Client({
   ],
 });
 
-// Set bot owner for /reload command (replace with your Discord user ID)
-client.ownerIDs = new Set(['YOUR_DISCORD_USER_ID']);
+// Set bot owner for /reload command
+const ownerId = process.env.OWNER_ID?.trim();
+if (!ownerId) {
+  logger.error('OWNER_ID is not set in .env. The /reload command will not work.');
+}
+client.ownerIDs = new Set(ownerId ? [ownerId] : []);
 
 client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('messageCreate', require('./events/messageCreate'));
+const _messageHandlers = [];
 
-const start = () => client.login(config.discordToken);
+function attachMessageHandler() {
+  const handler = require('./events/messageCreate');
+  client.on('messageCreate', handler);
+  _messageHandlers.push(handler);
+  return handler;
+}
 
-module.exports = { client, start };
+function detachMessageHandler() {
+  for (const handler of _messageHandlers) {
+    client.removeListener('messageCreate', handler);
+  }
+  _messageHandlers.length = 0;
+}
+
+const start = async () => {
+  attachMessageHandler();
+  client.login(config.discordToken);
+};
+
+module.exports = { client, start, attachMessageHandler, detachMessageHandler };
