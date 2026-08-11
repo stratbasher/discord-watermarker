@@ -230,7 +230,7 @@ module.exports = async function messageCreate(message) {
 
   const textColor = options.textColor || config.watermarkTextColor;
   const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity;
-  const quality = options.quality !== undefined ? options.quality : 80;
+  const quality = options.quality ?? config.watermarkQuality;
 
   const jobId = crypto.randomUUID();
   await createJobDir(jobId);

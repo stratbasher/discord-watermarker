@@ -69,11 +69,9 @@ async function applyWatermark(inputBuffer, username, guildName, options = {}) {
   const tileBuffer = Buffer.from(svgTile)
   const composites = buildComposites(width, height, tileSize, tileBuffer)
 
-  const quality = options.quality !== undefined ? options.quality : 80
-
   const outputBuffer = await sharp(inputBuffer)
     .composite(composites)
-    .webp({ quality })
+    .webp({ quality: options.quality ?? 90 })
     .toBuffer()
 
   return outputBuffer

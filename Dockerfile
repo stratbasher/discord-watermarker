@@ -16,6 +16,10 @@ COPY src ./src
 
 RUN mkdir -p /app/data /app/logs /app/tmp
 
+RUN mkdir -p /tmp/fontconfig && fc-cache -f && chown -R node:node /tmp/fontconfig
+
+ENV FONTCONFIG_PATH=/tmp/fontconfig
+
 USER node
 ENV NODE_ENV=production
 

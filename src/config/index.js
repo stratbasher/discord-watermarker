@@ -13,6 +13,7 @@ const config = {
   maxImagesPerMessage: 10,
   watermarkTextColor: process.env.WATERMARK_TEXT_COLOR || '#ffffff',
   watermarkTextOpacity: parseFloat(process.env.WATERMARK_TEXT_OPACITY || '0.6'),
+  watermarkQuality: parseInt(process.env.WATERMARK_QUALITY || '90', 10),
 };
 
 if (!config.discordToken) {
