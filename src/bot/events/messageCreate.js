@@ -65,18 +65,32 @@ const CSS_BASIC_COLORS = {
   'yellowgreen': '#9acd32',
 };
 
+function stripDiscordMentions(text) {
+  return text
+    .replace(/<@!?[\d]+>/g, '')
+    .replace(/<@&[\d]+>/g, '')
+    .replace(/<#[\d]+>/g, '')
+    .replace(/\b@everyone\b/gi, '')
+    .replace(/\b@here\b/gi, '');
+}
+
 function formatErrorReply(errors, messageContent) {
-  const escapedContent = messageContent
+  let escapedContent = messageContent
+    .replace(/\\/g, '\\\\')
     .replace(/`/g, '\\u200B`')
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .replace(/~/g, '\\~')
     .replace(/\n/g, '\\n');
   return errors.join('\n') + '\n\n```\n' + escapedContent + '\n```';
 }
 
-const VALID_OPTIONS = ['textcolor', 'opacity', 'quality', 'text'];
+const VALID_OPTIONS = ['textcolor', 'color', 'opacity', 'transparency', 'quality', 'text'];
 
 const SWITCH_PATTERNS = {
-  textcolor: /textcolor\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/gi,
+  textcolor: /(?:textcolor|color)\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/gi,
   opacity: /opacity\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
+  transparency: /transparency\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
   quality: /quality\s*:\s*(\d+)/gi,
   text: /text\s*:\s*(?:"([^"]+)"|'([^']+)')/gi,
 };
@@ -108,7 +122,7 @@ function parseMessageOptions(content) {
           } else if (validateHexColor(color)) {
             options.textColor = color;
           } else {
-            errors.push(`Invalid textcolor: "${match[1]}" — use hex (#fff, #ff0000) or a CSS color name`);
+            errors.push(`Invalid color: "${match[1]}" — use hex (#fff, #ff0000) or a CSS color name`);
           }
           break;
         }
@@ -126,6 +140,24 @@ function parseMessageOptions(content) {
               errors.push(`Invalid opacity: ${value} — must be 0.0 to 1.0 (or use %, e.g. 50%)`);
             } else {
               options.textOpacity = value;
+            }
+          }
+          break;
+        }
+        case 'transparency': {
+          let value = parseFloat(match[1]);
+          const isPercent = !!match[2];
+          if (isPercent) {
+            if (value < 0 || value > 100) {
+              errors.push(`Invalid transparency: ${value}% — must be 0 to 100`);
+            } else {
+              options.textOpacity = 1 - value / 100;
+            }
+          } else {
+            if (value < 0 || value > 1) {
+              errors.push(`Invalid transparency: ${value} — must be 0.0 to 1.0`);
+            } else {
+              options.textOpacity = 1 - value;
             }
           }
           break;
@@ -159,10 +191,16 @@ function parseMessageOptions(content) {
 
 function stripCommandSwitches(content) {
   return content
-    .replace(/textcolor\s*:\s*[^ ]+/gi, '')
+    .replace(/(?:textcolor|color)\s*:\s*[^ ]+/gi, '')
     .replace(/opacity\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
+    .replace(/transparency\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
     .replace(/quality\s*:\s*\d+\s*/gi, '')
     .replace(/text\s*:\s*(?:"[^"]*"|'[^']*')/gi, '')
+    .replace(/<@!?[\d]+>/g, '')
+    .replace(/<@&[\d]+>/g, '')
+    .replace(/<#[\d]+>/g, '')
+    .replace(/\b@everyone\b/gi, '')
+    .replace(/\b@here\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -199,7 +237,7 @@ async function handleReload(message) {
     logger.info(`Reloaded ${cleared.length} modules in ${Date.now() - start}ms`);
   } catch (err) {
     logger.error(`Reload failed: ${err.message}`, { stack: err.stack });
-    await message.reply({ content: `Reload failed: ${err.message}`, ephemeral: true });
+    await message.reply({ content: 'Reload failed. Check logs for details.', ephemeral: true });
     await message.delete().catch(() => {});
   }
 }
@@ -230,8 +268,9 @@ module.exports = async function messageCreate(message) {
         '@Watermarker <attach an image>',
         '',
         '**Customize the watermark:**',
-        '• `textcolor:red` — change the text color (use hex codes like `#ff0000` or color names like `red`, `blue`, `gold`) ',
-        '• `opacity:50%` — adjust how transparent the watermark is (0-100% or 0.0-1.0) ',
+        '• `textcolor:red` / `color:red` — change the text color (use hex codes like `#ff0000` or color names like `red`, `blue`, `gold`) ',
+        '• `opacity:50%` — adjust how opaque the watermark is (0-100% or 0.0-1.0) ',
+        '• `transparency:50%` — adjust how transparent the watermark is (0-100% or 0.0-1.0, inverse of opacity) ',
         '• `quality:80` — set image quality (1-100) ',
         '• `text:"my custom text"` — replace the default watermark text with anything you want ',
         '',
@@ -273,7 +312,8 @@ module.exports = async function messageCreate(message) {
 
   for (const attachment of images.values()) {
     if (attachment.size > config.maxFileSize) {
-      await message.reply({ content: formatErrorReply([`Image "${attachment.name}" exceeds the 25 MB limit.`], messageContent), ephemeral: true });
+      const safeName = stripDiscordMentions(attachment.name);
+      await message.reply({ content: formatErrorReply([`Image "${safeName}" exceeds the 25 MB limit.`], messageContent), ephemeral: true });
       await message.delete().catch(() => {});
       return;
     }
@@ -380,7 +420,7 @@ module.exports = async function messageCreate(message) {
       await jobRecord.update({ status: 'failed', errorMessage: err.message });
     }
     if (processingMsg) {
-      await processingMsg.edit(`Failed to process images: ${err.message}`).catch(() => {});
+      await processingMsg.edit('Failed to process images. Please try again later.').catch(() => {});
     }
   } finally {
     await cleanupJobDir(jobId);

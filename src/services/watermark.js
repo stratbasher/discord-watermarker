@@ -3,6 +3,7 @@ const config = require('../config')
 
 function escapeXml(str) {
   return String(str)
+    .replace(/[^\x20-\x7E]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

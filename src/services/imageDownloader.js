@@ -1,5 +1,5 @@
 const { request } = require('undici');
-const fs = require('fs').promises;
+const fs = require('fs');
 const { pipeline } = require('stream/promises');
 const { createWriteStream } = require('fs');
 const path = require('path');
@@ -25,8 +25,12 @@ async function downloadImage(url, jobId, filename) {
   });
 
   if (response.statusCode !== 200) {
-    const debugInfo = `url=${url}, statusCode=${response.statusCode}, headers=${JSON.stringify(response.headers)}`;
-    logger.error(`[imageDownloader] ${debugInfo}`);
+    const safeHeaders = {
+      'content-type': response.headers['content-type'],
+      'content-length': response.headers['content-length'],
+      server: response.headers['server'],
+    };
+    logger.error(`[imageDownloader] url=${url}, statusCode=${response.statusCode}, headers=${JSON.stringify(safeHeaders)}`);
     throw new Error(`Download failed with status ${response.statusCode}`);
   }
 
@@ -42,6 +46,14 @@ async function downloadImage(url, jobId, filename) {
 
   const filePath = path.resolve(config.tempDir, jobId, filename);
   await pipeline(response.body, createWriteStream(filePath));
+
+  // Validate downloaded size matches Content-Length
+  const actualSize = await fs.stat(filePath).then(s => s.size);
+  const expectedSize = parseInt(contentLength, 10);
+  if (contentLength && expectedSize && actualSize > expectedSize * 1.1) {
+    await fs.unlink(filePath).catch(() => {});
+    throw new Error(`Downloaded file size (${actualSize} bytes) exceeds Content-Length (${expectedSize} bytes)`);
+  }
 
   return filePath;
 }
