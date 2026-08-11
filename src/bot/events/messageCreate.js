@@ -71,7 +71,7 @@ const SWITCH_PATTERNS = {
   textcolor: /textcolor\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/gi,
   opacity: /opacity\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
   quality: /quality\s*:\s*(\d+)/gi,
-  text: /text\s*:\s*(?:(?!textcolor\s*:|opacity\s*:|quality\s*:).)*/gi,
+  text: /text\s*:\s*(?:"([^"]+)"|'([^']+)')/gi,
 };
 
 function validateHexColor(color) {
@@ -133,9 +133,7 @@ function parseMessageOptions(content) {
           break;
         }
         case 'text': {
-          const fullMatch = match[0];
-          const prefixMatch = fullMatch.match(/^text\s*:\s*/i);
-          options.customText = fullMatch.slice(prefixMatch[0].length).trim();
+          options.customText = (match[1] ?? match[2] ?? '').trim();
           break;
         }
       }
@@ -150,7 +148,7 @@ function stripCommandSwitches(content) {
     .replace(/textcolor\s*:\s*[^ ]+/gi, '')
     .replace(/opacity\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
     .replace(/quality\s*:\s*\d+\s*/gi, '')
-    .replace(/text\s*:\s*(?:(?!textcolor\s*:|opacity\s*:|quality\s*:).)*/gi, '')
+    .replace(/text\s*:\s*(?:"[^"]*"|'[^']*')/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
