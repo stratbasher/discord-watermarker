@@ -65,7 +65,14 @@ const CSS_BASIC_COLORS = {
   'yellowgreen': '#9acd32',
 };
 
-const VALID_OPTIONS = ['textcolor', 'opacity', 'quality'];
+const VALID_OPTIONS = ['textcolor', 'opacity', 'quality', 'text'];
+
+const SWITCH_PATTERNS = {
+  textcolor: /textcolor\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/gi,
+  opacity: /opacity\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
+  quality: /quality\s*:\s*(\d+)/gi,
+  text: /text\s*:\s*(?:(?!textcolor\s*:|opacity\s*:|quality\s*:).)*/gi,
+};
 
 function validateHexColor(color) {
   if (/^#[0-9a-fA-F]{6}$/.test(color)) return true;
@@ -77,57 +84,61 @@ function parseMessageOptions(content) {
   const errors = [];
   const options = {};
 
-  const textcolorMatch = content.match(/textcolor:(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/i);
-  if (textcolorMatch) {
-    let color = textcolorMatch[1];
-    if (color.length === 4) {
-      color = '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
-    }
-    if (CSS_BASIC_COLORS[color.toLowerCase()]) {
-      options.textColor = CSS_BASIC_COLORS[color.toLowerCase()];
-    } else if (validateHexColor(color)) {
-      options.textColor = color;
-    } else {
-      errors.push(`Invalid textcolor: "${textcolorMatch[1]}" — use hex (#fff, #ff0000) or a CSS color name`);
-    }
-  }
+  for (const [switchName, pattern] of Object.entries(SWITCH_PATTERNS)) {
+    const matches = [...content.matchAll(pattern)];
 
-  const opacityMatch = content.match(/opacity:(\d+(?:\.\d+)?)(%)?/);
-  if (opacityMatch) {
-    let value = parseFloat(opacityMatch[1]);
-    const isPercent = !!opacityMatch[2];
-    if (isPercent) {
-      if (value < 0 || value > 100) {
-        errors.push(`Invalid opacity: ${value}% — must be 0 to 100`);
-      } else {
-        options.textOpacity = value / 100;
+    if (matches.length === 0) continue;
+
+    for (const match of matches) {
+      switch (switchName) {
+        case 'textcolor': {
+          let color = match[1];
+          if (color.length === 4) {
+            color = '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+          }
+          if (CSS_BASIC_COLORS[color.toLowerCase()]) {
+            options.textColor = CSS_BASIC_COLORS[color.toLowerCase()];
+          } else if (validateHexColor(color)) {
+            options.textColor = color;
+          } else {
+            errors.push(`Invalid textcolor: "${match[1]}" — use hex (#fff, #ff0000) or a CSS color name`);
+          }
+          break;
+        }
+        case 'opacity': {
+          let value = parseFloat(match[1]);
+          const isPercent = !!match[2];
+          if (isPercent) {
+            if (value < 0 || value > 100) {
+              errors.push(`Invalid opacity: ${value}% — must be 0 to 100`);
+            } else {
+              options.textOpacity = value / 100;
+            }
+          } else {
+            if (value < 0 || value > 1) {
+              errors.push(`Invalid opacity: ${value} — must be 0.0 to 1.0 (or use %, e.g. 50%)`);
+            } else {
+              options.textOpacity = value;
+            }
+          }
+          break;
+        }
+        case 'quality': {
+          const val = parseInt(match[1], 10);
+          if (val < 1 || val > 100) {
+            errors.push(`Invalid quality: ${val} — must be 1 to 100`);
+          } else {
+            options.quality = val;
+          }
+          break;
+        }
+        case 'text': {
+          const fullMatch = match[0];
+          const prefixMatch = fullMatch.match(/^text\s*:\s*/i);
+          options.customText = fullMatch.slice(prefixMatch[0].length).trim();
+          break;
+        }
       }
-    } else {
-      if (value < 0 || value > 1) {
-        errors.push(`Invalid opacity: ${value} — must be 0.0 to 1.0 (or use %, e.g. 50%)`);
-      } else {
-        options.textOpacity = value;
-      }
-    }
-  }
-
-  const qualityMatch = content.match(/quality:(\d+)/);
-  if (qualityMatch) {
-    const val = parseInt(qualityMatch[1], 10);
-    if (val < 1 || val > 100) {
-      errors.push(`Invalid quality: ${val} — must be 1 to 100`);
-    } else {
-      options.quality = val;
-    }
-  }
-
-  const foundOptions = new Set();
-  for (const match of content.matchAll(/([a-z]+):/gi)) {
-    foundOptions.add(match[1].toLowerCase());
-  }
-  for (const opt of foundOptions) {
-    if (!VALID_OPTIONS.includes(opt)) {
-      errors.push(`Unknown option: "${opt}" — valid options are ${VALID_OPTIONS.join(', ')}`);
     }
   }
 
@@ -136,9 +147,10 @@ function parseMessageOptions(content) {
 
 function stripCommandSwitches(content) {
   return content
-    .replace(/textcolor:[^ ]+/gi, '')
-    .replace(/opacity:[^ ]+/gi, '')
-    .replace(/quality:[^ ]+/gi, '')
+    .replace(/textcolor\s*:\s*[^ ]+/gi, '')
+    .replace(/opacity\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
+    .replace(/quality\s*:\s*\d+\s*/gi, '')
+    .replace(/text\s*:\s*(?:(?!textcolor\s*:|opacity\s*:|quality\s*:).)*/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -231,6 +243,7 @@ module.exports = async function messageCreate(message) {
   const textColor = options.textColor || config.watermarkTextColor;
   const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity;
   const quality = options.quality ?? config.watermarkQuality;
+  const customText = options.customText;
 
   const jobId = crypto.randomUUID();
   await createJobDir(jobId);
@@ -287,7 +300,7 @@ module.exports = async function messageCreate(message) {
         inputBuffer,
         message.author.username,
         message.guild?.name,
-        { textColor, textOpacity, quality }
+        { textColor, textOpacity, quality, customText }
       );
       const watermarkedMeta = await sharp(watermarkedBuffer).metadata();
       logger.debug(`[${jobId}] [${idx}] watermarked ${watermarkedMeta.width}x${watermarkedMeta.height} ${watermarkedBuffer.length} bytes in ${Date.now() - t1}ms`);

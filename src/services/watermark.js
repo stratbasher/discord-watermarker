@@ -46,15 +46,24 @@ async function applyWatermark(inputBuffer, username, guildName, options = {}) {
     throw new Error("Unable to read image dimensions.")
   }
 
-  const escapedUsername = escapeXml(username)
-  const escapedGuildName = escapeXml(guildName || 'DM')
-  const combined = escapedUsername + ' | ' + escapedGuildName
-  const watermarkText = combined.length > 120 ? combined.slice(0, 117) + '...' : combined
+  let watermarkText
+  if (options.customText) {
+    watermarkText = escapeXml(options.customText)
+    if (watermarkText.length > 120) {
+      watermarkText = watermarkText.slice(0, 117) + '...'
+    }
+  } else {
+    const escapedUsername = escapeXml(username)
+    const escapedGuildName = escapeXml(guildName || 'DM')
+    const combined = escapedUsername + ' | ' + escapedGuildName
+    watermarkText = combined.length > 120 ? combined.slice(0, 117) + '...' : combined
+  }
 
-  const tileSize = Math.round(height / 2)
+  const baseTileSize = Math.min(width, height)
+  const tileSize = Math.max(100, Math.round(baseTileSize * 0.5))
   const fontSizeByHeight = Math.round(tileSize / 5)
   const fontSizeByWidth = Math.round(tileSize / (watermarkText.length * 0.55))
-  const fontSize = Math.max(10, Math.min(fontSizeByHeight, fontSizeByWidth))
+  const fontSize = Math.max(8, Math.min(fontSizeByHeight, fontSizeByWidth))
 
   const textColor = options.textColor || config.watermarkTextColor
   const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity
