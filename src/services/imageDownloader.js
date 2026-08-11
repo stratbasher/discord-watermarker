@@ -1,5 +1,5 @@
 const { request } = require('undici');
-const fs = require('fs');
+const fsp = require('fs').promises;
 const { pipeline } = require('stream/promises');
 const { createWriteStream } = require('fs');
 const path = require('path');
@@ -48,10 +48,10 @@ async function downloadImage(url, jobId, filename) {
   await pipeline(response.body, createWriteStream(filePath));
 
   // Validate downloaded size matches Content-Length
-  const actualSize = await fs.stat(filePath).then(s => s.size);
+  const actualSize = await fsp.stat(filePath).then(s => s.size);
   const expectedSize = parseInt(contentLength, 10);
   if (contentLength && expectedSize && actualSize > expectedSize * 1.1) {
-    await fs.unlink(filePath).catch(() => {});
+    await fsp.unlink(filePath).catch(() => {});
     throw new Error(`Downloaded file size (${actualSize} bytes) exceeds Content-Length (${expectedSize} bytes)`);
   }
 
