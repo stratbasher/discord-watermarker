@@ -18,7 +18,7 @@ if (!ownerId) {
 client.ownerIDs = new Set(ownerId ? [ownerId] : []);
 
 client.once('clientReady', () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  logger.info(`Logged in as ${client.user.tag}`);
 });
 
 const _messageHandlers = [];

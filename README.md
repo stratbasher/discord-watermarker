@@ -11,7 +11,8 @@ When @mentioned with one or more image attachments, the Watermarker bot download
 - **Tiled SVG watermark** — diagonal repeating tile with user and guild name, auto-scaling font size, configurable color, opacity, and quality
 - **WebP output** — all processed images are output as lossy WebP with configurable quality
 - **Per-job temp isolation** — each watermarking job gets a unique temp directory, cleaned up after completion
-- **SQLite job tracking** — Sequelize-backed `WatermarkJob` model stores userId, username, guildId, guildName, channel, image hashes, and job status
+- **SQLite job tracking** — Sequelize-backed `WatermarkJob` model stores userId, username, guildId, guildName, channel, image hashes, webhook message ID, and job status
+- **Delete watermark** — reply `delete` to a watermark webhook message to remove it (ownership verified via DB lookup)
 
 ## Important Limitations
 
@@ -79,9 +80,10 @@ npm start
 ```
 
 2. In any Discord text channel where the bot has permissions:
-   - Mention the bot (e.g. `@Watermarker`)
-   - Attach one or more images (PNG, JPG, etc.)
-     - The bot will delete the original messages, process each image, and reply with the watermarked WebP images via a webhook
+    - Mention the bot (e.g. `@Watermarker`)
+    - Attach one or more images (PNG, JPG, etc.)
+      - The bot will delete the original messages, process each image, and reply with the watermarked WebP images via a webhook
+3. To delete a watermark, reply `delete` to the webhook message that contains the watermarked images. Only the original user who sent the watermark request can delete it.
 
 The bot requires `Manage Webhooks` and `Attach Files` permissions to send watermarked output and delete original messages.
 
@@ -176,20 +178,27 @@ Discord message (@mention + images)
    │     ├─► Per-image processing (parallel)
    │     │     └─ applyWatermark — tiled SVG composite, output as WebP
    │     │
-   │     ├─► postViaWebhook
-   │     │     ├─ Get or create "Watermarker" webhook per channel
-   │     │     └─ Send watermarked WebP files with original author info
-   │     │
-   │     ├─ Update WatermarkJob record (status: completed, image hashes)
+    │     ├─► postViaWebhook
+    │     │     ├─ Get or create "Watermarker" webhook per channel
+    │     │     └─ Send watermarked WebP files with original author info; returns webhook message ID
+    │     │
+    │     ├─ Update WatermarkJob record (status: completed, image hashes, messageId)
   │     └─► cleanupJobDir — remove per-job temp directory
-  │
-  ├─► WatermarkJob DB record (SQLite, Sequelize)
-  │     └─ Fields: id, userId, username, guildId, guildName, channelId,
+   │
+   ├─► WatermarkJob DB record (SQLite, Sequelize)
+   │     └─ Fields: id, messageId, userId, username, guildId, guildName, channelId,
    │                originalMessageContent, imageCount, imageHashes,
-   │                status, errorMessage
+   │                status (`processing` | `completed` | `failed` | `deleted`), errorMessage
   │
-  └─► Cleanup (finally block)
-        └─ Remove temp directory, delete processing status message
+   └─► Cleanup (finally block)
+         └─ Remove temp directory, delete processing status message
+   │
+   └─► /delete (reply to watermark message)
+         ├─ Query WatermarkJob by messageId (exclude `deleted` status)
+         ├─ Verify job.userId matches message.author.id
+         ├─ Fetch and delete the webhook message
+         ├─ Update WatermarkJob status to `deleted`
+         └─ Reply confirmation (ephemeral DM or in-channel fallback)
 ```
 
 ## Testing

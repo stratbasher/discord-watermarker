@@ -6,7 +6,7 @@ jest.mock('discord.js', () => {
   };
 });
 
-const { getOrCreateWebhook } = require('../../src/services/webhookPoster');
+const { getOrCreateWebhook, postViaWebhook } = require('../../src/services/webhookPoster');
 
 describe('getOrCreateWebhook', () => {
   beforeEach(() => {
@@ -59,5 +59,72 @@ describe('getOrCreateWebhook', () => {
     expect(result).toBe(existingWebhook);
     expect(mockChannel.createWebhook).not.toHaveBeenCalled();
     expect(mockChannel.fetchWebhooks).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('postViaWebhook', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('returns the webhook message ID', async () => {
+    const mockWebhook = {
+      send: jest.fn().mockResolvedValue({ id: 'webhook-msg-123' }),
+    };
+    const webhookMap = new Map();
+    webhookMap.find = () => undefined;
+    webhookMap.keys = () => ({ next: () => ({ value: undefined }) });
+
+    const mockChannel = {
+      id: 'channel3',
+      client: { user: { displayAvatarURL: jest.fn().mockReturnValue('https://example.com/avatar.png') } },
+      fetchWebhooks: jest.fn().mockResolvedValue(webhookMap),
+      createWebhook: jest.fn().mockResolvedValue(mockWebhook),
+    };
+    const mockUser = {
+      username: 'TestUser',
+      displayAvatarURL: jest.fn().mockReturnValue('https://example.com/avatar.png'),
+    };
+
+    const result = await postViaWebhook(
+      mockChannel,
+      mockUser,
+      'test content',
+      [Buffer.from('image')],
+      ['test.png']
+    );
+
+    expect(mockChannel.fetchWebhooks).toHaveBeenCalledTimes(1);
+    expect(mockChannel.createWebhook).toHaveBeenCalledTimes(1);
+    expect(result).toBe('webhook-msg-123');
+  });
+
+  test('returns message ID when webhook already cached', async () => {
+    const cachedWebhook = { id: 'cached-webhook', name: 'Watermarker' };
+    cachedWebhook.send = jest.fn().mockResolvedValue({ id: 'webhook-msg-456' });
+
+    const cachedMap = new Map([['cached', cachedWebhook]]);
+    cachedMap.find = (fn) => {
+      for (const [, val] of cachedMap) {
+        if (fn(val)) return val;
+      }
+      return undefined;
+    };
+
+    const mockChannel = {
+      id: 'channel4',
+      fetchWebhooks: jest.fn().mockResolvedValue(cachedMap),
+      client: { user: { displayAvatarURL: () => 'https://example.com/a.png' } },
+    };
+
+    const result = await postViaWebhook(
+      mockChannel,
+      { username: 'User', displayAvatarURL: () => 'https://example.com/a.png' },
+      'content',
+      [],
+      []
+    );
+
+    expect(result).toBe('webhook-msg-456');
   });
 });

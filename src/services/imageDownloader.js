@@ -8,6 +8,14 @@ const logger = require('../utils/logger');
 
 const ALLOWED_HOSTNAMES = ['cdn.discordapp.com', 'media.discordapp.net'];
 
+/**
+ * Download an image from a permitted Discord CDN URL to a local temp file.
+ *
+ * @param {string} url - Image URL to download.
+ * @param {string} jobId - Unique job ID for the temp directory.
+ * @param {string} filename - Output filename within the job directory.
+ * @returns {Promise<string>} Resolved local file path.
+ */
 async function downloadImage(url, jobId, filename) {
   let parsed;
   try {

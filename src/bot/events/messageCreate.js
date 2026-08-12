@@ -1,247 +1,82 @@
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
 const config = require('../../config');
 const logger = require('../../utils/logger');
-const { clearSrcCache } = require('../../utils/reload');
-const { createJobDir, cleanupJobDir } = require('../../utils/tempFiles');
-const { downloadImage } = require('../../services/imageDownloader');
-const { applyWatermark } = require('../../services/watermark');
-const { postViaWebhook } = require('../../services/webhookPoster');
-const WatermarkJob = require('../../database/models/WatermarkJob');
-const { detachMessageHandler, attachMessageHandler } = require('../../bot/client');
+const { parseMessageOptions, formatErrorReply } = require('./parsers');
+const { isOwner, validateImages } = require('./validators');
+const { handleHelp, handleReload } = require('./handlers');
+const { executeWatermarkJob } = require('./orchestrator/watermarkJob');
 
-const CSS_BASIC_COLORS = {
-  'aliceblue': '#f0f8ff', 'antiquewhite': '#faebd7', 'aqua': '#00ffff',
-  'aquamarine': '#7fffd4', 'azure': '#f0ffff', 'beige': '#f5f5dc',
-  'bisque': '#ffe4c4', 'black': '#000000', 'blanchedalmond': '#ffebcd',
-  'blue': '#0000ff', 'blueviolet': '#8a2be2', 'brown': '#a52a2a',
-  'burlywood': '#deb887', 'cadetblue': '#5f9ea0', 'chartreuse': '#7fff00',
-  'chocolate': '#d2691e', 'coral': '#ff7f50', 'cornflowerblue': '#6495ed',
-  'cornsilk': '#fff8dc', 'crimson': '#dc143c', 'cyan': '#00ffff',
-  'darkblue': '#00008b', 'darkcyan': '#008b8b', 'darkgoldenrod': '#b8860b',
-  'darkgray': '#a9a9a9', 'darkgreen': '#006400', 'darkgrey': '#a9a9a9',
-  'darkkhaki': '#bdb76b', 'darkmagenta': '#8b008b', 'darkolivegreen': '#556b2f',
-  'darkorange': '#ff8c00', 'darkorchid': '#9932cc', 'darkred': '#8b0000',
-  'darksalmon': '#e9967a', 'darkseagreen': '#8fbc8f', 'darkslateblue': '#483d8b',
-  'darkslategray': '#2f4f4f', 'darkslategrey': '#2f4f4f', 'darkturquoise': '#00ced1',
-  'darkviolet': '#9400d3', 'deeppink': '#ff1493', 'deepskyblue': '#00bfff',
-  'dimgray': '#696969', 'dimgrey': '#696969', 'dodgerblue': '#1e90ff',
-  'firebrick': '#b22222', 'floralwhite': '#fffaf0', 'forestgreen': '#228b22',
-  'fuchsia': '#ff00ff', 'gainsboro': '#dcdcdc', 'ghostwhite': '#f8f8ff',
-  'gold': '#ffd700', 'goldenrod': '#daa520', 'gray': '#808080',
-  'green': '#008000', 'greenyellow': '#adff2f', 'grey': '#808080',
-  'honeydew': '#f0fff0', 'hotpink': '#ff69b4', 'indianred': '#cd5c5c',
-  'indigo': '#4b0082', 'ivory': '#fffff0', 'khaki': '#f0e68c',
-  'lavender': '#e6e6fa', 'lavenderblush': '#fff0f5', 'lawngreen': '#7cfc00',
-  'lemonchiffon': '#fffacd', 'lightblue': '#add8e6', 'lightcoral': '#f08080',
-  'lightcyan': '#e0ffff', 'lightgoldenrodyellow': '#fafad2', 'lightgray': '#d3d3d3',
-  'lightgreen': '#90ee90', 'lightgrey': '#d3d3d3', 'lightpink': '#ffb6c1',
-  'lightsalmon': '#ffa07a', 'lightseagreen': '#20b2aa', 'lightskyblue': '#87cefa',
-  'lightslategray': '#778899', 'lightslategrey': '#778899', 'lightsteelblue': '#b0c4de',
-  'lightyellow': '#ffffe0', 'lime': '#00ff00', 'limegreen': '#32cd32',
-  'linen': '#faf0e6', 'magenta': '#ff00ff', 'maroon': '#800000',
-  'mediumaquamarine': '#66cdaa', 'mediumblue': '#0000cd', 'mediumorchid': '#ba55d3',
-  'mediumpurple': '#9370db', 'mediumseagreen': '#3cb371', 'mediumslateblue': '#7b68ee',
-  'mediumspringgreen': '#00fa9a', 'mediumturquoise': '#48d1cc', 'mediumvioletred': '#c71585',
-  'midnightblue': '#191970', 'mintcream': '#f5fffa', 'mistyrose': '#ffe4e1',
-  'moccasin': '#ffe4b5', 'navajowhite': '#ffdead', 'navy': '#000080',
-  'oldlace': '#fdf5e6', 'olive': '#808000', 'olivedrab': '#6b8e23',
-  'orange': '#ffa500', 'orangered': '#ff4500', 'orchid': '#da70d6',
-  'palegoldenrod': '#eee8aa', 'palegreen': '#98fb98', 'paleturquoise': '#afeeee',
-  'palevioletred': '#db7093', 'papayawhip': '#ffefd5', 'peachpuff': '#ffdab9',
-  'peru': '#cd853f', 'pink': '#ffc0cb', 'plum': '#dda0dd',
-  'powderblue': '#b0e0e6', 'purple': '#800080', 'rebeccapurple': '#663399',
-  'red': '#ff0000', 'rosybrown': '#bc8f8f', 'royalblue': '#4169e1',
-  'saddlebrown': '#8b4513', 'salmon': '#fa8072', 'sandybrown': '#f4a460',
-  'seagreen': '#2e8b57', 'seashell': '#fff5ee', 'sienna': '#a0522d',
-  'silver': '#c0c0c0', 'skyblue': '#87ceeb', 'slateblue': '#6a5acd',
-  'slategray': '#708090', 'slategrey': '#708090', 'snow': '#fffafa',
-  'springgreen': '#00ff7f', 'steelblue': '#4682b4', 'tan': '#d2b48c',
-  'teal': '#008080', 'thistle': '#d8bfd8', 'tomato': '#ff6347',
-  'turquoise': '#40e0d0', 'violet': '#ee82ee', 'wheat': '#f5deb3',
-  'white': '#ffffff', 'whitesmoke': '#f5f5f5', 'yellow': '#ffff00',
-  'yellowgreen': '#9acd32',
-};
-
-function stripDiscordMentions(text) {
-  return text
-    .replace(/<@!?[\d]+>/g, '')
-    .replace(/<@&[\d]+>/g, '')
-    .replace(/<#[\d]+>/g, '')
-    .replace(/\b@everyone\b/gi, '')
-    .replace(/\b@here\b/gi, '');
-}
-
-function formatErrorReply(errors, messageContent) {
-  let escapedContent = messageContent
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\u200B`')
-    .replace(/\*/g, '\\*')
-    .replace(/_/g, '\\_')
-    .replace(/~/g, '\\~')
-    .replace(/\n/g, '\\n');
-  return errors.join('\n') + '\n\n```\n' + escapedContent + '\n```';
-}
-
-const VALID_OPTIONS = ['textcolor', 'color', 'opacity', 'transparency', 'quality', 'text'];
-
-const SWITCH_PATTERNS = {
-  textcolor: /(?:textcolor|color)\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|[a-zA-Z]+)/gi,
-  opacity: /opacity\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
-  transparency: /transparency\s*:\s*(\d+(?:\.\d+)?)(%)?/gi,
-  quality: /quality\s*:\s*(\d+)/gi,
-  text: /text\s*:\s*(?:"([^"]+)"|'([^']+)')/gi,
-};
-
-function validateHexColor(color) {
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return true;
-  if (/^#[0-9a-fA-F]{3}$/.test(color)) return true;
-  return false;
-}
-
-function parseMessageOptions(content) {
-  const errors = [];
-  const options = {};
-
-  for (const [switchName, pattern] of Object.entries(SWITCH_PATTERNS)) {
-    const matches = [...content.matchAll(pattern)];
-
-    if (matches.length === 0) continue;
-
-    for (const match of matches) {
-      switch (switchName) {
-        case 'textcolor': {
-          let color = match[1];
-          if (color.length === 4) {
-            color = '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
-          }
-          if (CSS_BASIC_COLORS[color.toLowerCase()]) {
-            options.textColor = CSS_BASIC_COLORS[color.toLowerCase()];
-          } else if (validateHexColor(color)) {
-            options.textColor = color;
-          } else {
-            errors.push(`Invalid color: "${match[1]}" — use hex (#fff, #ff0000) or a CSS color name`);
-          }
-          break;
-        }
-        case 'opacity': {
-          let value = parseFloat(match[1]);
-          const isPercent = !!match[2];
-          if (isPercent) {
-            if (value < 0 || value > 100) {
-              errors.push(`Invalid opacity: ${value}% — must be 0 to 100`);
-            } else {
-              options.textOpacity = value / 100;
-            }
-          } else {
-            if (value < 0 || value > 1) {
-              errors.push(`Invalid opacity: ${value} — must be 0.0 to 1.0 (or use %, e.g. 50%)`);
-            } else {
-              options.textOpacity = value;
-            }
-          }
-          break;
-        }
-        case 'transparency': {
-          let value = parseFloat(match[1]);
-          const isPercent = !!match[2];
-          if (isPercent) {
-            if (value < 0 || value > 100) {
-              errors.push(`Invalid transparency: ${value}% — must be 0 to 100`);
-            } else {
-              options.textOpacity = 1 - value / 100;
-            }
-          } else {
-            if (value < 0 || value > 1) {
-              errors.push(`Invalid transparency: ${value} — must be 0.0 to 1.0`);
-            } else {
-              options.textOpacity = 1 - value;
-            }
-          }
-          break;
-        }
-        case 'quality': {
-          const val = parseInt(match[1], 10);
-          if (val < 1 || val > 100) {
-            errors.push(`Invalid quality: ${val} — must be 1 to 100`);
-          } else {
-            options.quality = val;
-          }
-          break;
-        }
-        case 'text': {
-          const rawText = (match[1] ?? match[2] ?? '').trim();
-          if (rawText.length === 0) {
-            errors.push('`text:` switch requires a value, e.g. `text:"my custom text"`');
-          } else if (rawText.length > 30) {
-            errors.push(`Custom text is too long (${rawText.length} chars) — max 30 characters`);
-          } else {
-            options.customText = rawText;
-          }
-          break;
-        }
-      }
+/**
+ * Send a reply to the user, via DM if enabled, falling back to in-channel.
+ *
+ * @param {import('discord.js').Message} message - The original message.
+ * @param {string} content - Reply content.
+ * @returns {Promise<import('discord.js').Message>}
+ */
+async function sendUserReply(message, content) {
+  if (!config.sendDMs) {
+    return await message.reply({ content });
+  }
+  try {
+    await message.author.send(content);
+    logger.debug(`DM sent to ${message.author.tag}`);
+  } catch (err) {
+    if (err.code === 50007) {
+      logger.info(`DMs blocked for ${message.author.tag}, replying in-channel`);
+    } else {
+      logger.error(`DM send failed for ${message.author.tag}: ${err.message}`);
     }
+    await message.reply({ content });
+  }
+}
+
+/**
+ * Handle the /delete command: find and delete the target watermark message by reply reference.
+ *
+ * @param {import('discord.js').Message} message - The message triggering the delete.
+ * @param {(message, content: string) => Promise<void>} sendUserReply - Reply helper.
+ */
+async function handleDelete(message, sendUserReply) {
+  const { Op } = require('sequelize');
+  const WatermarkJob = require('../../database/models/WatermarkJob');
+  const ref = message.reference;
+  if (!ref?.messageId) {
+    await sendUserReply(message, 'You must reply to the watermark message you want to delete.');
+    return;
   }
 
-  return { errors, options };
-}
+  const jobId = ref.messageId;
 
-function stripCommandSwitches(content) {
-  return content
-    .replace(/(?:textcolor|color)\s*:\s*[^ ]+/gi, '')
-    .replace(/opacity\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
-    .replace(/transparency\s*:\s*(?:\d+(?:\.\d+)?%?)\s*/gi, '')
-    .replace(/quality\s*:\s*\d+\s*/gi, '')
-    .replace(/text\s*:\s*(?:"[^"]*"|'[^']*')/gi, '')
-    .replace(/<@!?[\d]+>/g, '')
-    .replace(/<@&[\d]+>/g, '')
-    .replace(/<#[\d]+>/g, '')
-    .replace(/\b@everyone\b/gi, '')
-    .replace(/\b@here\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
+  const job = await WatermarkJob.findOne({
+    where: { messageId: jobId, status: { [Op.ne]: 'deleted' } },
+  });
 
-function isOwner(message) {
-  return message.client.ownerIDs?.has(message.author.id) || false;
-}
+  if (!job) {
+    await sendUserReply(message, 'That message is not a recognized watermark from this bot.');
+    return;
+  }
 
-async function handleReload(message) {
-  const start = Date.now();
-  const cleared = clearSrcCache();
-
-  if (cleared.length === 0) {
-    await message.reply({ content: 'No modules to reload.', ephemeral: true });
-    await message.delete().catch(() => {});
+  if (job.userId !== message.author.id) {
+    await sendUserReply(message, 'You can only delete watermarks you created.');
     return;
   }
 
   try {
-    detachMessageHandler();
-    const eventsPath = __dirname;
-    for (const file of fs.readdirSync(eventsPath)) {
-      if (file.endsWith('.js')) {
-        require(path.join(eventsPath, file));
-      }
-    }
-    attachMessageHandler();
+    const channel = await message.client.channels.fetch(job.channelId);
+    const webhookMsg = await channel.messages.fetch(jobId);
 
-    await message.reply({
-      content: `Reloaded ${cleared.length} module(s) in ${Date.now() - start}ms:\n\`\`\`${cleared.slice(0, 20).join('\n')}${cleared.length > 20 ? '\n...(truncated)' : ''}\n\`\`\``,
-      ephemeral: true,
-    });
-    await message.delete().catch(() => {});
-    logger.info(`Reloaded ${cleared.length} modules in ${Date.now() - start}ms`);
-  } catch (err) {
-    logger.error(`Reload failed: ${err.message}`, { stack: err.stack });
-    await message.reply({ content: 'Reload failed. Check logs for details.', ephemeral: true });
-    await message.delete().catch(() => {});
+    await webhookMsg.delete();
+    await job.update({ status: 'deleted' });
+    await sendUserReply(message, 'Watermarked image has been deleted.');
+  } catch {
+    await sendUserReply(message, 'Could not delete the watermark message. It may no longer exist.');
   }
 }
 
+/**
+ * Main message handler: parse, validate, and dispatch watermark jobs.
+ *
+ * @param {import('discord.js').Message} message - Incoming Discord message.
+ */
 module.exports = async function messageCreate(message) {
   if (message.author.bot) return;
 
@@ -250,38 +85,24 @@ module.exports = async function messageCreate(message) {
 
   if (message.mentions.has(message.client.user) && isOwner(message)) {
     if (strippedContent === '/reload' || strippedContent.startsWith('/reload ')) {
-      await handleReload(message);
+      await handleReload(message, sendUserReply);
+      return;
+    }
+    if (strippedContent === '/help' || strippedContent.startsWith('/help ')) {
+      await handleHelp(message, sendUserReply);
       return;
     }
   }
 
+  if (message.mentions.has(message.client.user) && strippedContent === '/delete') {
+    await handleDelete(message, sendUserReply);
+    return;
+  }
+
   if (!message.mentions.has(message.client.user)) return;
 
-  if (strippedContent === '/help' || strippedContent.startsWith('/help ')) {
-    await message.reply({
-      content: [
-        'Hey! Here\'s how to use me:',
-        '',
-        'Just mention me (@Watermarker) with up to 10 images attached and I\'ll add a watermark to them.',
-        '',
-        '**Basic usage:**',
-        '@Watermarker <attach an image>',
-        '',
-        '**Customize the watermark:**',
-        '• `textcolor:red` / `color:red` — change the text color (use hex codes like `#ff0000` or color names like `red`, `blue`, `gold`) ',
-        '• `opacity:50%` — adjust how opaque the watermark is (0-100% or 0.0-1.0) ',
-        '• `transparency:50%` — adjust how transparent the watermark is (0-100% or 0.0-1.0, inverse of opacity) ',
-        '• `quality:80` — set image quality (1-100) ',
-        '• `text:"my custom text"` — replace the default watermark text with anything you want ',
-        '',
-        'Example: @Watermarker textcolor:gold opacity:30% <attach an image>',
-        'Example: @Watermarker text:"Made with ❤️" <attach an image>',
-        '',
-        'Drop an image, mention me, and you\'ll get a watermarked version back!',
-      ].join('\n'),
-      ephemeral: true,
-    });
-    await message.delete().catch(() => {});
+  if (message.reference?.messageId && strippedContent === 'delete') {
+    await handleDelete(message, sendUserReply);
     return;
   }
 
@@ -289,143 +110,18 @@ module.exports = async function messageCreate(message) {
 
   const { errors, options } = parseMessageOptions(messageContent);
   if (errors.length > 0) {
-    await message.reply({
-      content: formatErrorReply(errors, messageContent),
-      ephemeral: true,
-    });
+    await sendUserReply(message, formatErrorReply(errors, rawContent));
     await message.delete().catch(() => {});
     return;
   }
 
   const images = message.attachments.filter(a => a.contentType?.startsWith('image/'));
-  if (images.size === 0) {
-    await message.reply({ content: formatErrorReply(['Please attach at least one image to watermark.'], messageContent), ephemeral: true });
+  const validation = validateImages(images, rawContent);
+  if (!validation.valid) {
+    await sendUserReply(message, validation.errors[0]);
     await message.delete().catch(() => {});
     return;
   }
 
-  if (images.size > config.maxImagesPerMessage) {
-    await message.reply({ content: formatErrorReply([`You can only process up to ${config.maxImagesPerMessage} images at once.`], messageContent), ephemeral: true });
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  for (const attachment of images.values()) {
-    if (attachment.size > config.maxFileSize) {
-      const safeName = stripDiscordMentions(attachment.name);
-      await message.reply({ content: formatErrorReply([`Image "${safeName}" exceeds the 25 MB limit.`], messageContent), ephemeral: true });
-      await message.delete().catch(() => {});
-      return;
-    }
-  }
-
-  const textColor = options.textColor || config.watermarkTextColor;
-  const textOpacity = options.textOpacity !== undefined ? options.textOpacity : config.watermarkTextOpacity;
-  const quality = options.quality ?? config.watermarkQuality;
-  const customText = options.customText;
-
-  const jobId = crypto.randomUUID();
-  await createJobDir(jobId);
-  let processingMsg = null;
-  const imageHashes = [];
-
-  let jobRecord = null;
-  try {
-    processingMsg = await message.channel.send({ content: `Processing ${images.size} image(s)...` });
-    jobRecord = await WatermarkJob.create({
-      id: jobId,
-      userId: message.author.id,
-      username: message.author.username,
-      guildId: message.guild?.id,
-      guildName: message.guild?.name,
-      channelId: message.channel.id,
-      originalMessageContent: message.content,
-      imageCount: images.size,
-      status: 'processing',
-    });
-
-    const downloadedImages = [];
-    let idx = 0;
-
-    const dlStart = Date.now();
-    const downloadPromises = [];
-    for (const attachment of images.values()) {
-      const originalName = attachment.name || `image-${idx}.jpg`
-      const baseName = originalName.replace(/\.[^.]+$/, '')
-      logger.debug(`[messageCreate] Downloading attachment: url=${attachment.url}, name=${attachment.name}, size=${attachment.size}, contentType=${attachment.contentType}`);
-      downloadPromises.push(
-        downloadImage(attachment.url, jobId, `input-${idx}.png`)
-          .then(inputPath => fs.promises.readFile(inputPath))
-          .then(inputBuffer => ({ inputBuffer, idx, originalName, baseName }))
-      );
-      idx++;
-    }
-
-    const downloadedResults = await Promise.all(downloadPromises);
-    downloadedImages.push(...downloadedResults);
-    logger.debug(`[${jobId}] Downloaded ${downloadedImages.length} images in ${Date.now() - dlStart}ms`);
-
-    await message.delete().catch(() => {});
-
-    const watermarkedBuffers = [];
-    const outputFilenames = [];
-
-    const processingPromises = downloadedImages.map(async ({ inputBuffer, idx, baseName }) => {
-      const t0 = Date.now();
-      logger.debug(`[${jobId}] [${idx}] input ${inputBuffer.length} bytes`);
-
-      const t1 = Date.now();
-      const watermarkedBuffer = await applyWatermark(
-        inputBuffer,
-        message.author.username,
-        message.guild?.name,
-        { textColor, textOpacity, quality, customText }
-      );
-      const watermarkedMeta = await sharp(watermarkedBuffer).metadata();
-      logger.debug(`[${jobId}] [${idx}] watermarked ${watermarkedMeta.width}x${watermarkedMeta.height} ${watermarkedBuffer.length} bytes in ${Date.now() - t1}ms`);
-
-      logger.debug(`[${jobId}] [${idx}] total image processing ${Date.now() - t0}ms`);
-
-      return {
-        finalBuffer: watermarkedBuffer,
-        hash: crypto.createHash('sha256').update(watermarkedBuffer).digest('hex'),
-        filename: `${baseName}.webp`,
-      };
-    });
-
-    const t4 = Date.now();
-    const processingResults = await Promise.all(processingPromises);
-    logger.debug(`[${jobId}] All images processed in ${Date.now() - t4}ms`);
-
-    for (const result of processingResults) {
-      imageHashes.push(result.hash);
-      watermarkedBuffers.push(result.finalBuffer);
-      outputFilenames.push(result.filename);
-    }
-
-    const t5 = Date.now();
-    const cleanContent = stripCommandSwitches(messageContent);
-    await postViaWebhook(message.channel, message.author, cleanContent, watermarkedBuffers, outputFilenames);
-    logger.debug(`[${jobId}] Webhook send in ${Date.now() - t5}ms`);
-
-    logger.info(`[${jobId}] Job completed in ${Date.now() - dlStart}ms`);
-
-    await jobRecord.update({
-      status: 'completed',
-      imageHashes,
-    });
-  } catch (err) {
-    logger.error(`Job ${jobId} failed: ${err.message}`, { stack: err.stack });
-    if (jobRecord) {
-      await jobRecord.update({ status: 'failed', errorMessage: err.message });
-    }
-    if (processingMsg) {
-      await processingMsg.edit('Failed to process images. Please try again later.').catch(() => {});
-    }
-  } finally {
-    await cleanupJobDir(jobId);
-    if (processingMsg) {
-      processingMsg.delete().catch(() => {});
-    }
-  }
+  await executeWatermarkJob(message, images, options, sendUserReply);
 };

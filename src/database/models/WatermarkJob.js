@@ -9,6 +9,10 @@ class WatermarkJob extends Model {
           defaultValue: DataTypes.UUIDV4,
           primaryKey: true,
         },
+        messageId: {
+          type: DataTypes.STRING,
+          allowNull: true,
+        },
         userId: {
           type: DataTypes.STRING,
           allowNull: false,
@@ -42,7 +46,7 @@ class WatermarkJob extends Model {
           allowNull: true,
         },
         status: {
-          type: DataTypes.ENUM('processing', 'completed', 'failed'),
+          type: DataTypes.ENUM('processing', 'completed', 'failed', 'deleted'),
           allowNull: false,
           defaultValue: 'processing',
         },
@@ -54,6 +58,8 @@ class WatermarkJob extends Model {
       {
         sequelize,
         modelName: 'watermarkJob',
+        timestamps: true,
+        indexes: [{ fields: ['status'] }],
       }
     );
   }

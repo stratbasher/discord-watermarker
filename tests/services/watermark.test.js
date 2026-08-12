@@ -9,6 +9,14 @@ jest.mock('../../src/config', () => ({
   maxImagesPerMessage: 10,
   watermarkTextColor: '#ffffff',
   watermarkTextOpacity: 0.6,
+  minTileSize: 100,
+  tileScaleFactor: 0.5,
+  minFontSize: 8,
+  maxFontSizeRatio: 0.05,
+  fontSizeTileDivisor: 5,
+  tilePassCount: 3,
+  maxWatermarkTextLength: 120,
+  textTruncationOffset: 117,
 }));
 
 const testTempBase = path.join('C:\\Users\\adamb\\AppData\\Local\\Temp', 'watermarker-wm-test');
