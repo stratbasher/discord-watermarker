@@ -83,23 +83,23 @@ module.exports = async function messageCreate(message) {
   const rawContent = message.content;
   const strippedContent = rawContent.replace(/<@!?[\d]+>/g, '').trim();
 
-  if (message.mentions.has(message.client.user) && isOwner(message)) {
+  if (message.mentions.users.has(message.client.user.id) && isOwner(message)) {
     if (strippedContent === '/reload' || strippedContent.startsWith('/reload ')) {
       await handleReload(message, sendUserReply);
       return;
     }
     if (strippedContent === '/help' || strippedContent.startsWith('/help ')) {
-      await handleHelp(message, sendUserReply);
+      await handleHelp(message);
       return;
     }
   }
 
-  if (message.mentions.has(message.client.user) && strippedContent === '/delete') {
+  if (message.mentions.users.has(message.client.user.id) && strippedContent === '/delete') {
     await handleDelete(message, sendUserReply);
     return;
   }
 
-  if (!message.mentions.has(message.client.user)) return;
+  if (!message.mentions.users.has(message.client.user.id)) return;
 
   if (message.reference?.messageId && strippedContent === 'delete') {
     await handleDelete(message, sendUserReply);
